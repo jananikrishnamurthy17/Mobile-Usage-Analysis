@@ -5,8 +5,11 @@ This project analyzes mobile usage patterns across age groups, gender, and user 
 
 ## Contents
 **Mobile_Usage_Analysis.Rmd**: R Markdown file containing the code and analysis.
+
 **Mobile_Usage_Analysis_Report**: Final report summarizing findings.
+
 **Mobile_Usage_Analysis_ppt**: Presentation highlighting key results and insights.
+
 
 ## Key Tools
 Language: R

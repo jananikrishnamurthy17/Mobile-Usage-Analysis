@@ -1,0 +1,951 @@
+---
+title: "Data Visualisation project"
+author: "Janani Krishnamurthy"
+date: "2024-12-13"
+output: html_document
+---
+
+## Libraries
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(reshape2)
+library(treemapify)
+library(ggmosaic)
+library(RColorBrewer)
+```
+
+## Data Pre-processing
+
+```{r}
+data <- read.csv("user_behavior_dataset 1.csv")
+head(data)
+```
+
+```{r}
+# Remove duplicates
+data <- data %>% distinct()
+summary(data)
+nrow(data)
+```
+
+```{r}
+# Standardize categorical data
+
+# Convert `Operating System` and `Gender` columns to factor type
+data$Operating.System <- as.factor(data$Operating.System)
+data$Gender <- as.factor(data$Gender)
+
+# Standardize case
+data$Device.Model <- tolower(data$Device.Model)
+data$Operating.System <- tolower(data$Operating.System)
+data$Gender <- tolower(data$Gender)
+```
+
+```{r}
+# Remove rows with unrealistic values
+data <- data %>%
+  filter(
+    `App.Usage.Time..min.day.` >= 0 & `App.Usage.Time..min.day.` <= 1440, 
+    `Screen.On.Time..hours.day.` >= 0 & `Screen.On.Time..hours.day.` <= 24,
+    `Battery.Drain..mAh.day.` >= 0
+  )
+```
+
+```{r}
+# Remove rows with missing values
+data <- data %>%
+  drop_na()
+```
+
+```{r}
+# Convert Age and User Behavior Class to integer
+data$Age <- as.integer(data$Age)
+data$User.Behavior.Class <- as.integer(data$User.Behavior.Class)
+```
+
+```{r}
+#Renaming the column names
+
+data <- data %>%
+  rename(
+    User_ID = User.ID,
+    Device_Model = Device.Model,
+    Operating_System = Operating.System,
+    App_Usage_Time_Mins_Per_Day = App.Usage.Time..min.day.,
+    Screen_Time_Hours_Per_Day = Screen.On.Time..hours.day.,
+    Battery_Consumption_mAh_Per_Day = Battery.Drain..mAh.day.,
+    Number_Of_Apps_Installed = Number.of.Apps.Installed,
+    Data_Usage_MB_Per_Day = Data.Usage..MB.day.,
+    User_Behavior_Class = User.Behavior.Class
+  )
+```
+
+```{r}
+summary(data)
+```
+
+```{r}
+head(data)
+```
+
+```{r}
+data <- data %>% mutate(Age_Group = cut(Age, breaks = seq(10, 70, by = 10), right = FALSE))
+```
+
+
+#### Heat Map
+
+```{r}
+library(reshape2)
+num_vars <- data[, c("Screen_Time_Hours_Per_Day", 
+                     "Battery_Consumption_mAh_Per_Day", 
+                     "Data_Usage_MB_Per_Day", 
+                     "App_Usage_Time_Mins_Per_Day", 
+                     "Number_Of_Apps_Installed")]
+
+# Create a simplified version of variable names
+simplified_names <- c(
+  "Screen Time (hrs/day)",
+  "Battery Consumption (mAh/day)",
+  "Data Usage (MB/day)",
+  "App Usage Time (mins/day)",
+  "Number of Apps Installed"
+)
+
+# Calculate correlation matrix
+cor_matrix <- cor(num_vars, use = "complete.obs")
+
+# Rename columns and rows in the correlation matrix
+colnames(cor_matrix) <- simplified_names
+rownames(cor_matrix) <- simplified_names
+
+# Melt the correlation matrix for ggplot2
+cor_melt <- melt(cor_matrix)
+
+# Ensure both axes have the same factor levels
+cor_melt$Var2 <- factor(cor_melt$Var2, levels = rev(colnames(cor_matrix)))
+
+# Plot the heatmap
+ggplot(cor_melt, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = round(value, 2)), color = "white", size = 4) +  
+  scale_fill_gradient(low = "lightskyblue", high = "navy", name = "Correlation") +  
+  labs(
+    title = "Heatmap of Correlations between Key Variables",
+    x = NULL,  
+    y = NULL   
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),  
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),  
+    axis.text.y = element_text(size = 12),  
+    panel.grid = element_blank(),  
+    panel.border = element_blank(),  
+    axis.line = element_line(color = "black")  
+  )
+```
+
+#### Screen On Time
+
+```{r}
+# Calculate summary statistics for Screen On Time
+box_summary <- data.frame(
+  Metric = c("Mean", "Upper", "Lower"),
+  Value = c(mean(data$Screen_Time_Hours_Per_Day, na.rm = TRUE),
+            max(data$Screen_Time_Hours_Per_Day, na.rm = TRUE),
+            min(data$Screen_Time_Hours_Per_Day, na.rm = TRUE)),
+  y = c(14.5, 13.5, 12.5) 
+)
+
+# Add a constant x value since this is a single variable plot
+box_summary$x <- 1
+
+# Create the box plot with annotated text
+ggplot(data, aes(y = Screen_Time_Hours_Per_Day)) +
+  geom_boxplot(fill = "skyblue", color = "black", outlier.color = "red", outlier.shape = 16) + 
+  geom_text(data = box_summary, aes(x = 0, y = y, label = paste0(Metric, ": ", round(Value, 2))),
+            inherit.aes = FALSE, size = 4, color = "black") + 
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(), 
+    axis.line = element_line(color = "black") 
+  ) +
+  labs(
+    title = "Box Plot of Screen On Time with Annotations",
+    y = "Screen On Time (Hours per Day)"
+  )
+```
+
+
+#### Gender
+
+```{r}
+
+gender_counts <- as.data.frame(table(data$Gender))
+colnames(gender_counts) <- c("Gender", "Count")
+
+# Calculate percentages
+gender_counts$Percentage <- round((gender_counts$Count / sum(gender_counts$Count)) * 100, 1)
+
+# Create the polar graph with percentage labels
+ggplot(gender_counts, aes(x = "", y = Count, fill = Gender)) +
+  geom_bar(stat = "identity", width = 1, color = "black") + 
+  coord_polar(theta = "y") + 
+  scale_fill_manual(values = c("male" = "skyblue", "female" = "pink")) + 
+  geom_text(aes(label = paste0(Percentage, "%")), 
+            position = position_stack(vjust = 0.5), color ="black", size = 5) + 
+  labs(
+    title = "Gender Distribution",
+    fill = "Gender"
+  ) +
+  theme_void() + 
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5) 
+  )
+```
+
+#### User Behaviour Class
+
+```{r}
+user_class_distribution <- data %>%
+  count(User_Behavior_Class) %>%
+  mutate(Percentage = round(n / sum(n) * 100, 1))  
+
+# Create a pie chart
+ggplot(user_class_distribution, aes(x = "", y = Percentage, fill = as.factor(User_Behavior_Class))) +
+  geom_bar(stat = "identity", width = 1, color = "white") +  
+  coord_polar(theta = "y") +  
+  labs(
+    title = "User Behavior Class Distribution",
+    fill = "Behavior Class"
+  ) +
+  geom_text(aes(label = paste0(Percentage, "%")), 
+            position = position_stack(vjust = 0.5), size = 4, color = "black") +  
+  scale_fill_manual(values = c("lightblue", "skyblue", "dodgerblue", "deepskyblue", "steelblue")) + 
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    axis.title = element_blank(),  
+    axis.text = element_blank(),  
+    panel.grid = element_blank(),  
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+```
+
+
+#### User Behaviour Class by App Usage and Gender (Volin Plot)
+
+```{r}
+# Violin Plot for App Usage Time Distribution by Gender and User Class
+ggplot(data, aes(x = as.factor(User_Behavior_Class), y = App_Usage_Time_Mins_Per_Day, fill = Gender)) +
+  geom_violin(alpha = 0.8, color = "black") + 
+  labs(
+    title = "App Usage Time Distribution by Gender and User Class",
+    x = "User Behavior Class",
+    y = "App Usage Time (Minutes/Day)",
+    fill = "Gender"
+  ) +
+  scale_fill_manual(values = c("male" = "skyblue", "female" = "pink")) + 
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.position = "top", 
+    panel.grid = element_blank(), 
+    axis.line = element_line(color = "black") 
+  )
+```
+
+
+#### Same using Box plot for seeing actual difference between Gender
+
+```{r}
+# Box Plot
+ggplot(data, aes(x = as.factor(User_Behavior_Class), y = App_Usage_Time_Mins_Per_Day, fill = Gender)) +
+  geom_boxplot(alpha = 0.6, position = position_dodge(0.9), outlier.shape = NA) +
+  labs(
+    title = "App Usage Time Distribution by Gender and User Class",
+    x = "User Behavior Class",
+    y = "App Usage Time (Minutes/Day)",
+    fill = "Gender",
+    color = "Gender"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.position = "top"
+  ) +
+  scale_fill_manual(values = c("pink", "lightblue"))
+```
+
+
+#### Bar Graph for the Average App Usage Time by Gender and User Behavior Class 
+
+```{r}
+bar_data <- data %>%
+  group_by(User_Behavior_Class, Gender) %>%
+  summarise(Average_App_Usage = mean(App_Usage_Time_Mins_Per_Day, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(bar_data, aes(x = as.factor(User_Behavior_Class), y = Average_App_Usage, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black", alpha = 0.9, width = 0.7) + 
+  geom_text(aes(label = round(Average_App_Usage, 1)), 
+            position = position_dodge(0.7), vjust = 1.5, hjust= 0.5, size = 4, color = "black") +  
+  labs(
+    title = "Average App Usage Time by Gender and User Behavior Class",
+    x = "User Behavior Class",
+    y = "Average App Usage Time (Minutes/Day)",
+    fill = "Gender"
+  ) +
+  scale_fill_manual(values = c("male" = "skyblue", "female" = "pink")) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 600)) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.position = "top", 
+    panel.grid = element_blank(), 
+    axis.line = element_line(color = "black") 
+  )
+```
+
+#### Average Data Usage by User Behaviour Class
+
+```{r}
+avg_data_usage <- data %>%
+  group_by(User_Behavior_Class) %>%
+  summarise(Average_Data_Usage = round(mean(Data_Usage_MB_Per_Day, na.rm = TRUE), 1))
+
+# Line plot
+ggplot(avg_data_usage, aes(x = as.factor(User_Behavior_Class), y = Average_Data_Usage, group = 1)) +
+  geom_line(color = "skyblue", size = 1.2) +
+  geom_point(color = "blue", size = 3) +
+  geom_text(aes(label = Average_Data_Usage), vjust = 0.4, hjust = -0.3, size = 4) +
+  labs(
+    title = "Average Data Usage by User Behavior Class",
+    x = "User Behavior Class",
+    y = "Average Data Usage (MB/Day)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    panel.grid = element_blank(), 
+    axis.line = element_line(color = "black")
+  )
+```
+
+#### Average Number of Apps Installed by User Behaviour Class and Gender
+
+```{r}
+# Summarize the data for the average number of apps installed by User Behavior Class and Gender
+avg_apps_installed_gender <- data %>%
+  group_by(User_Behavior_Class, Gender) %>%
+  summarise(Average_Apps_Installed = round(mean(Number_Of_Apps_Installed, na.rm = TRUE), 0)) %>%
+  mutate(User_Behavior_Class = as.factor(User_Behavior_Class))
+
+# Plot the average number of apps installed by User Behavior Class and Gender
+ggplot(avg_apps_installed_gender, aes(x = User_Behavior_Class, y = Average_Apps_Installed, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black", alpha = 0.9, width = 0.7) +
+  geom_text(aes(label = Average_Apps_Installed), position = position_dodge(width = 0.7), vjust = -0.5, size = 4, color = "black") +
+  scale_fill_manual(values = c("female" = "pink", "male" = "skyblue")) +
+  labs(
+    title = "Average Number of Apps Installed by User Behavior Class and Gender",
+    x = "User Behavior Class",
+    y = "Average Number of Apps Installed",
+    fill = "Gender"
+  ) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 100)) + 
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    panel.grid = element_blank(), 
+    axis.line = element_line(color = "black"), 
+    legend.position = "top"
+  )
+```
+
+#### Screen Time by User Behaviour Class
+
+```{r}
+ggplot(data, aes(x = Screen_Time_Hours_Per_Day, fill = as.factor(User_Behavior_Class))) +
+  geom_density(alpha = 0.6) +  
+  scale_fill_brewer(palette = "Set3") +  
+  labs(
+    title = "Density of Screen Time by User Behavior Class",
+    x = "Screen Time (Hours/Day)",
+    y = "Density",
+    fill = "Behavior Class"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.position = "right",
+    panel.grid = element_blank(),  
+    axis.line = element_line(color = "black")  
+  )
+```
+
+#### Average Data Usage by User Behaviour Class and Age Group
+
+```{r}
+heatmap_data <- data %>%
+  group_by(User_Behavior_Class, Age_Group) %>%
+  summarise(Average_Data_Usage = round(mean(Data_Usage_MB_Per_Day, na.rm = TRUE), 1))
+
+# Heatmap
+ggplot(heatmap_data, aes(x = Age_Group, y = as.factor(User_Behavior_Class), fill = Average_Data_Usage)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Average_Data_Usage), size = 4, color = "black") +
+  scale_fill_gradient(low = "lightblue", high = "blue", name = "Data Usage (MB)") +
+  labs(
+    title = "Heatmap of Average Data Usage by User Behavior Class and Age Group",
+    x = "Age Group",
+    y = "User Behavior Class"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    panel.grid = element_blank() 
+  )
+```
+
+#### User Behaviour Class relationship with all Variaables
+
+```{r}
+# Select relevant variables
+scatter_data <- data[, c("User_Behavior_Class", 
+                         "Screen_Time_Hours_Per_Day", 
+                         "Battery_Consumption_mAh_Per_Day", 
+                         "Data_Usage_MB_Per_Day", 
+                         "App_Usage_Time_Mins_Per_Day", 
+                         "Number_Of_Apps_Installed")]
+
+# Convert data to long format for faceting
+scatter_long <- pivot_longer(scatter_data, 
+                             cols = -User_Behavior_Class, 
+                             names_to = "Variable", 
+                             values_to = "Value")
+
+# Plot scatterplots with faceting
+ggplot(scatter_long, aes(x = Value, y = User_Behavior_Class, color = Variable)) +
+  geom_point(alpha = 0.6) +
+  facet_wrap(~ Variable, scales = "free_x") +
+  labs(title = "Scatterplots of User Behavior Class vs Other Variables",
+       x = "Variable Value",
+       y = "User Behavior Class") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+```
+
+#### Battery Usage vs Data Usage by User Behaviour Class and Gender
+
+```{r}
+ggplot(data, aes(x = Data_Usage_MB_Per_Day, y = Battery_Consumption_mAh_Per_Day, color = Gender)) +
+  geom_point(alpha = 0.6) +
+  facet_wrap(~ User_Behavior_Class,scales = "free_x") +
+  labs(title = "Battery Consumption vs. Data Usage by User Class and Gender",
+       x = "Data Usage (MB/day)",
+       y = "Battery Consumption (mAh/day)",
+       color = "Gender") +
+  theme_minimal() +
+    theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5), 
+    strip.text = element_text(size = 12, face = "bold"), 
+    axis.line = element_line(color = "black"), 
+    panel.grid = element_blank(), 
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10), 
+    axis.text.y = element_text(size = 10), 
+    legend.position = "right" 
+  )
+```
+
+
+#### Initial Graphs :Created by Me. But is not used as such in the report or PPT
+
+```{r}
+# Bar Plot of Device Models
+ggplot(data, aes(x = reorder(Device_Model, Device_Model, function(x) -length(x)))) +
+  geom_bar(fill = "orange", alpha = 0.7) +
+  geom_text(stat = "count", aes(label = ..count..), vjust = 1.5, color = "black") +
+  labs(title = "Device Model Distribution", x = "Device Model", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+ggplot(data, aes(x = reorder(Device_Model, Device_Model, function(x) -length(x)), fill = Gender)) +
+  geom_bar(position = "dodge", alpha = 0.7) +
+  labs(title = "Device Model Distribution by Gender", x = "Device Model", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+
+# Calculate total count per device model
+total_counts <- data %>%
+  group_by(Device_Model) %>%
+  summarise(Total = n())
+
+# Create the grouped bar chart with total count labels
+ggplot(data, aes(x = reorder(Device_Model, -table(Device_Model)[Device_Model]), fill = Gender)) +
+  geom_bar(position = "dodge", alpha = 0.7) +
+  geom_text(data = total_counts, aes(x = Device_Model, y = Total + 5, label = Total), 
+            inherit.aes = FALSE, color = "black", size = 3, vjust = -0.5) + 
+  labs(title = "Device Model Distribution by Gender with Total Count", 
+       x = "Device Model", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+```{r}
+ggplot(data, aes(x = reorder(Device_Model, -table(Device_Model)[Device_Model]), fill = Gender)) +
+  geom_bar(position = "dodge", alpha = 0.7) +
+  geom_text(stat = "count", aes(label = ..count..), 
+            position = position_dodge(width = 0.9), vjust = -0.5, color = "black", size = 3) +
+  labs(title = "Device Model Distribution by Gender", 
+       x = "Device Model", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+```{r}
+# Scatter plot for Number of Apps Installed vs. Battery Drain
+ggplot(data, aes(x = Number_Of_Apps_Installed, y = Battery_Consumption_mAh_Per_Day)) +
+  geom_point(color = "blue") +
+  labs(
+    title = "Number of Apps Installed vs. Battery Drain",
+    x = "Number of Apps Installed",
+    y = "Battery Drain (mAh/day)"
+  ) +
+  theme_minimal()
+```
+
+
+# Homework 7 
+
+#Visulaising User Behavior class using bar and pie chart
+
+```{r}
+# Bar Plot for User_Behavior_Class
+ggplot(data, aes(x = User_Behavior_Class)) +
+  geom_bar(fill = "skyblue", color = "black") +
+  geom_text(stat = "count", aes(label = ..count..), vjust = -0.5) +
+  labs(
+    title = "Distribution of User Behavior Class",
+    x = "User Behavior Class",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+```
+
+
+```{r}
+# Pie Chart for User_Behavior_Class
+behavior_counts <- data %>%
+  dplyr::count(User_Behavior_Class) %>%
+  dplyr::mutate(percentage = n / sum(n) * 100)
+
+ggplot(behavior_counts, aes(x = "", y = percentage, fill = as.factor(User_Behavior_Class))) +
+  geom_col(width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")), 
+            position = position_stack(vjust = 0.5), color = "white") +
+  scale_fill_brewer(palette = "Set1") +  
+  labs(
+    title = "User Behavior Class Distribution (Pie Chart)",
+    x = NULL,
+    y = NULL,
+    fill = "User Behavior Class"
+  ) +
+  theme_void() +
+  theme(legend.position = "right")
+
+```
+
+#Visualising Screen_Time_Hours_Per_Day
+
+```{r}
+ggplot(data, aes(x = Screen_Time_Hours_Per_Day)) +
+  geom_histogram(binwidth = 0.5, fill = "skyblue", color = "black") +
+  labs(
+    title = "Distribution of Screen Time per Day",
+    x = "Screen Time (Hours per Day)",
+    y = "Frequency"
+  ) +
+  theme_minimal()
+
+```
+
+
+```{r}
+ggplot(data, aes(x = Screen_Time_Hours_Per_Day)) +
+  geom_density(fill = "blue", alpha = 0.5) +
+  labs(
+    title = "Density of Screen Time (Hours per Day)",
+    x = "Screen Time (Hours per Day)",
+    y = "Density"
+  ) +
+  theme_minimal()
+```
+
+#Visualising Gender
+
+
+```{r}
+ggplot(data, aes(x = Gender)) +
+  geom_bar(fill = "skyblue") +
+  labs(title = "Gender Distribution of Mobile Users", x = "Gender", y = "Count") +
+  theme_minimal()
+```
+
+
+#Visualising Age
+
+```{r}
+ #2. Age Distribution - Histogram
+ggplot(data, aes(x = Age)) +
+  geom_histogram(binwidth = 5, fill = "white", color = "black") +
+  labs(title = "Age Distribution of Mobile Users", x = "Age", y = "Frequency") +
+  theme_minimal()
+```
+
+#Visualising Battery Drain
+
+```{r}
+# 3. Battery Drain (mAh/day) - Density Plot
+ggplot(data, aes(x = `Battery_Consumption_mAh_Per_Day`)) +
+  geom_density(fill = "salmon", alpha = 0.7) +
+  labs(title = "Battery Drain Distribution", x = "Battery Drain (mAh/day)", y = "Density") +
+  theme_minimal()
+```
+
+#Visualising Device Model
+
+```{r}
+# Get unique values of Device.Model
+unique_models <- unique(data$Device_Model)
+print(unique_models)
+
+```
+
+```{r}
+# Bar chart for Device Model
+
+ggplot(data, aes(x = Device_Model)) +
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Distribution of Device Models", x = "Device Model", y = "Count")
+
+```
+
+#Visualising Operating System
+
+```{r}
+# Pie chart for Operating System
+os_counts <- table(data$Operating_System)
+pie(os_counts, main = "Distribution of Operating Systems", col = rainbow(length(os_counts)))
+
+```
+
+#Visualising App_Usage_Time_Mins_Per_Day
+
+```{r}
+# Histogram for App Usage Time
+ggplot(data, aes(x = App_Usage_Time_Mins_Per_Day)) +
+  geom_histogram(binwidth = 30, color = "black", fill = "blue", alpha = 0.7) +
+  labs(title = "Distribution of App Usage Time per Day", x = "App Usage Time (Minutes)", y = "Frequency")
+
+```
+
+#Combination of Screen Time and User Class
+
+```{r}
+ggplot(data, aes(x = Screen_Time_Hours_Per_Day, fill = as.factor(User_Behavior_Class))) +
+  geom_density(alpha = 0.6) +
+  labs(
+    title = "Density of Screen Time per Day by User Behavior Class",
+    x = "Screen Time (Hours per Day)",
+    y = "Density",
+    fill = "User Behavior Class"
+  ) +
+  theme_minimal()
+
+```
+
+
+```{r}
+# Jitter Plot of Screen Time by User Behavior Class
+ggplot(data, aes(x = as.factor(User_Behavior_Class), y = Screen_Time_Hours_Per_Day, color = as.factor(User_Behavior_Class))) +
+  geom_jitter(width = 0.1, alpha = 0.5) +
+  labs(
+    title = "Individual Screen Time Data Points by User Behavior Class",
+    x = "User Behavior Class",
+    y = "Screen Time (Hours per Day)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+#Homework 9:
+
+#Graph 1: 
+This graph helps analyze if battery consumption correlates with data usage and whether the pattern differs by gender within each user behavior class. High battery consumption with low data usage may indicate inefficient apps or background activity. <br/>
+
+```{r}
+ggplot(data, aes(x = Data_Usage_MB_Per_Day, y = Battery_Consumption_mAh_Per_Day, color = Gender)) +
+  geom_point(alpha = 0.6) +
+  facet_wrap(~ User_Behavior_Class,scales = "free_x") +
+  labs(title = "Battery Consumption vs. Data Usage by User Class and Gender",
+       x = "Data Usage (MB/day)",
+       y = "Battery Consumption (mAh/day)",
+       color = "Gender") +
+  theme_minimal()
+```
+
+
+#Graph 2:
+
+This graph shows the proportion of each device model within different user behavior classes. It helps identify if specific user behavior classes prefer certain devices more than others. <br/>
+
+```{r}
+ggplot(data, aes(x = as.factor(User_Behavior_Class), fill = Device_Model)) +
+  geom_bar(position = "fill") +  # 'fill' shows proportions
+  labs(title = "Proportion of Device Models by User Behavior Class",
+       x = "User Behavior Class",
+       y = "Proportion",
+       fill = "Device Model") +
+  theme_minimal()
+```
+
+
+
+#Graph 3 :
+
+The violin plot will show the distribution and density of app usage time for each gender, separated by user behavior class. It helps identify if certain classes or genders spend more time using apps and how usage varies within each class.. <br/>
+
+```{r}
+ggplot(data, aes(x = Gender, y = App_Usage_Time_Mins_Per_Day, fill = as.factor(User_Behavior_Class))) +
+  geom_violin(alpha = 0.6) +
+  labs(title = "App Usage Time Distribution by Gender and User Class",
+       x = "Gender",
+       y = "App Usage Time (Minutes/Day)",
+       fill = "User Class") +
+  theme_minimal()
+
+```
+
+#Graph 4 :
+
+```{r}
+library(ggplot2)
+library(reshape2)
+
+# Select numerical variables
+num_vars <- data[, c("Screen_Time_Hours_Per_Day", "Battery_Consumption_mAh_Per_Day", 
+                     "Data_Usage_MB_Per_Day", "App_Usage_Time_Mins_Per_Day", 
+                     "Number_Of_Apps_Installed")]
+
+# Calculate correlation matrix
+cor_matrix <- cor(num_vars, use = "complete.obs")
+
+# Melt for ggplot2
+cor_melt <- melt(cor_matrix)
+
+cor_melt$Var2 <- factor(cor_melt$Var2, levels = rev(colnames(cor_matrix)))
+
+
+# Plot heatmap
+ggplot(cor_melt, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  labs(title = "Heatmap of Correlations between Key Variables", fill = "Correlation") +
+  theme_minimal() +
+  scale_fill_gradient(low = "lightskyblue", high = "navy") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  
+    axis.text.y = element_text(angle = 0)  
+  )
+
+```
+
+
+
+#Graph 5 :
+
+This visual helps identify whether certain user behavior classes favor iOS or Android more. For example, if a class heavily uses iOS, it may reflect a preference for specific usage patterns or demographics. <br/>
+
+
+```{r}
+unique(data$Operating_System)
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Clean the data to ensure no NA or empty values
+data_clean <- data %>%
+  filter(!is.na(Operating_System) & Operating_System != "")
+
+# Summarize data for OS distribution within each user behavior class
+os_summary <- data_clean %>%
+  group_by(User_Behavior_Class, Operating_System) %>%
+  summarise(Count = n(), .groups = "drop")
+
+# Plot bar graph with counts and adjusted label position
+ggplot(os_summary, aes(x = Operating_System, y = Count, fill = Operating_System)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.6) +  
+  geom_text(aes(label = Count), 
+            vjust = 1.5,  
+            size = 4, 
+            color = "white") +  
+  facet_wrap(~ User_Behavior_Class, scales = "free_y") + 
+  labs(title = "Operating System Distribution by User Behavior Class", 
+       y = "Count", x = "Operating System", fill = "Operating System") +
+  theme_minimal() +
+  theme(legend.position = "none",  
+        strip.text = element_text(size = 10),  
+        axis.text.x = element_text(angle = 45, hjust = 1))  
+
+
+```
+
+```{r}
+library(dplyr)
+
+# Clean the data to ensure no NA or empty values
+data_clean <- data %>%
+  filter(!is.na(Operating_System) & Operating_System != "")
+
+# Summarize data for OS distribution within each user behavior class
+os_summary <- data_clean %>%
+  group_by(User_Behavior_Class, Operating_System) %>%
+  summarise(Count = n(), .groups = "drop")
+
+# Calculate total count per User Behavior Class to compute percentages
+os_percentage <- os_summary %>%
+  group_by(User_Behavior_Class) %>%
+  mutate(Total_Count = sum(Count)) %>%
+  ungroup() %>%
+  mutate(Percentage = (Count / Total_Count) * 100)
+
+# Display the table with percentages
+os_percentage_table <- os_percentage %>%
+  select(User_Behavior_Class, Operating_System, Count, Percentage) %>%
+  arrange(User_Behavior_Class, Operating_System)
+
+# Print the table
+print(os_percentage_table)
+
+```
+
+```{r}
+library(ggplot2)
+
+# Create a pie chart with better label placement
+ggplot(os_percentage_table, aes(x = "", y = Percentage, fill = Operating_System)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y") +
+  facet_wrap(~ User_Behavior_Class) + 
+  labs(title = "Operating System Distribution by User Behavior Class", fill = "Operating System") +
+  theme_void() +  
+  theme(
+    plot.title = element_text(hjust = 0.5), 
+    strip.text = element_text(size = 12)  
+  ) +
+  # Adding percentage labels
+  geom_text(aes(label = paste0(round(Percentage, 1), "%")), 
+            position = position_stack(vjust = 0.6),  
+            size = 4, 
+            color = "white")   
+
+
+```
+
+
+
+
+
+
+```{r}
+table(data_clean$User_Behavior_Class, data_clean$Operating_System)
+```
+
+#Graph 6 :
+
+```{r}
+ggplot(data, aes(x = factor(User_Behavior_Class), y = Data_Usage_MB_Per_Day, fill = factor(User_Behavior_Class))) +
+  geom_bar(stat = "identity") +
+  labs(title = "Data Usage by User Behavior Class",
+       x = "User Behavior Class",
+       y = "Data Usage (MB/Day)",
+       fill = "User Class") +
+  theme_minimal()
+```
+
+
+```{r}
+library(ggplot2)
+library(tidyr)
+
+# Select relevant variables
+scatter_data <- data[, c("User_Behavior_Class", 
+                         "Screen_Time_Hours_Per_Day", 
+                         "Battery_Consumption_mAh_Per_Day", 
+                         "Data_Usage_MB_Per_Day", 
+                         "App_Usage_Time_Mins_Per_Day", 
+                         "Number_Of_Apps_Installed")]
+
+# Convert data to long format for faceting
+scatter_long <- pivot_longer(scatter_data, 
+                             cols = -User_Behavior_Class, 
+                             names_to = "Variable", 
+                             values_to = "Value")
+
+# Plot scatterplots with faceting
+ggplot(scatter_long, aes(x = Value, y = User_Behavior_Class, color = Variable)) +
+  geom_point(alpha = 0.6) +
+  facet_wrap(~ Variable, scales = "free_x") +
+  labs(title = "Scatterplots of User Behavior Class vs Other Variables",
+       x = "Variable Value",
+       y = "User Behavior Class") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+
+
+```
+
+
+
+
+
+
